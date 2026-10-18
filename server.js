@@ -1,5 +1,27 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { MongoClient } = require('mongodb');
+
+function loadEnv() {
+    try {
+        const text = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+        for (const line of text.split(/\r?\n/)) {
+            const t = line.trim();
+            if (!t || t.startsWith('#')) continue;
+            const i = t.indexOf('=');
+            if (i < 1) continue;
+            const key = t.slice(0, i).trim();
+            let val = t.slice(i + 1).trim();
+            if (val.length > 1 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) {
+                val = val.slice(1, -1);
+            }
+            if (!(key in process.env)) process.env[key] = val;
+        }
+        console.log('[env] da nap .env');
+    } catch (e) {}
+}
+loadEnv();
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
