@@ -1,0 +1,16 @@
+{
+  "name": "crab-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Server registry, cross-server chat and trust sync backend for the CRAB Mindustry plugin (MongoDB).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.10.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
