@@ -53,6 +53,6 @@ Sửa `config/mods/combinedplugin/settings.json` của server:
 ```
 
 ## Dữ liệu trong MongoDB
-- `servers`: unique theo name, tự xoá nếu 7 ngày không heartbeat.
+- `servers`: unique theo name + ip + port, tự xoá nếu 7 ngày không heartbeat (nhiều server trùng tên vẫn hiện riêng).
 - `scores`: unique theo uuid; điểm bị khoá từ dashboard sẽ không cho server ghi đè.
 - `messages`: chat xuyên server, TTL 15 phút tự xoá.

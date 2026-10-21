@@ -49,7 +49,7 @@ function connectMongo() {
         colServers = m.collection('servers');
         colScores = m.collection('scores');
         colMessages = m.collection('messages');
-        await colServers.createIndex({ name: 1 }, { unique: true });
+        await ensureServerIndexes();
         await colScores.createIndex({ uuid: 1 }, { unique: true });
         await colMessages.createIndex({ ts: 1 }, { expireAfterSeconds: MESSAGE_TTL_SECONDS });
         db = m;
@@ -59,6 +59,27 @@ function connectMongo() {
         console.log('[mongo] connect failed: ' + e.message + ' - retry in 10s');
         setTimeout(connectMongo, 10000);
     });
+}
+
+async function ensureServerIndexes() {
+    try {
+        const indexes = await colServers.indexes();
+        const old = indexes.find(i => i.name === 'name_1');
+        if (old && old.unique) {
+            await colServers.dropIndex('name_1');
+            console.log('[mongo] dropped unique name index');
+        }
+    } catch (e) {
+        console.log('[mongo] server index migrate skipped: ' + e.message);
+    }
+    try {
+        await colServers.createIndex(
+            { name: 1, ip: 1, port: 1 },
+            { unique: true, name: 'name_ip_port' }
+        );
+    } catch (e) {
+        console.log('[mongo] server index warning: ' + e.message);
+    }
 }
 
 async function pruneOldServers() {
@@ -106,16 +127,28 @@ async function serverLines() {
 
 async function handleRegister(body) {
     const name = clean(body.name, 'unnamed');
-    const cur = await colServers.findOne({ name });
+    const ip = clean(body.ip);
+    const port = parseInt(body.port, 10) || 6567;
+    let cur = ip ? await colServers.findOne({ name, ip, port }) : null;
+    if (!cur && ip) {
+        cur = await colServers.findOne({ name, port, ip: { $in: ['', null] } });
+    }
+    if (!cur) {
+        cur = await colServers.findOne({ name, port });
+    }
     const doc = {
-        ip: clean(body.ip) || (cur && cur.ip) || '',
-        port: parseInt(body.port, 10) || (cur && cur.port) || 6567,
+        ip: ip || (cur && cur.ip) || '',
+        port,
         mode: clean(body.mode) || (cur && cur.mode) || '',
         desc: clean(body.desc) || (cur && cur.desc) || '',
         players: Math.max(0, parseInt(body.players, 10) || 0),
         lastSeen: Date.now()
     };
-    await colServers.updateOne({ name }, { $set: doc }, { upsert: true });
+    if (cur && cur._id) {
+        await colServers.updateOne({ _id: cur._id }, { $set: doc });
+    } else {
+        await colServers.updateOne({ name, ip: doc.ip, port }, { $set: doc }, { upsert: true });
+    }
     console.log('[register] ' + name + ' ' + (doc.ip || '?') + ':' + doc.port + ' ' + doc.players + 'p ' + doc.mode);
 }
 
@@ -192,8 +225,11 @@ async function handlePlugin(body, res) {
         case 'register':
             await handleRegister(body);
             return sendJson(res, 200, { ok: true });
-        case 'list':
-            return sendJson(res, 200, { ok: true, servers: await serverLines() });
+        case 'list': {
+            const lines = await serverLines();
+            console.log('[list] ' + (lines ? lines.split('\n').length : 0) + ' servers');
+            return sendJson(res, 200, { ok: true, servers: lines });
+        }
         case 'chat':
             await handleChat(body);
             return sendJson(res, 200, { ok: true });
@@ -250,6 +286,7 @@ async function adminUnlock(body, res) {
 function sendJson(res, code, obj) {
     res.writeHead(code, {
         'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
